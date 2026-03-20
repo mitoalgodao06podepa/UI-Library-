@@ -1,269 +1,261 @@
---[[
-    SerotininLib — Drawing-based UI Library
-    Rendering via Drawing API + RunService
-    
-    API:
-        local Lib = loadstring(game:HttpGet("..."))()
-        local Win = Lib.new({ title="MyScript", x=120, y=80, width=620, height=430 })
-        local Tab = Win:Tab("Aimbot")
-        local Sec = Tab:Section({ name="General", side="left" })
-
-        Sec:Toggle({ name="Enabled",   default=false, callback=function(v) end })
-        Sec:Button({ name="Click Me",  callback=function()   end })
-        Sec:Slider({ name="Smoothing", min=0, max=100, default=75, decimals=0, callback=function(v) end })
-        Sec:Dropdown({ name="Style",   options={"Spring","Linear"}, default="Spring", callback=function(v) end })
-        Sec:MultiDropdown({ name="Hitboxes", options={"Head","Neck","Chest"}, default={}, callback=function(t) end })
-        Sec:Keybind({ name="Aimkey",   default="T", callback=function(k) end })
-        Sec:TextInput({ name="Tag",    placeholder="...", callback=function(s) end })
-        Sec:ColorPicker({ name="Color",default=Color3.fromRGB(0,185,165), callback=function(c) end })
-        Sec:Label({ text="v1.0.0", color=Color3.fromRGB(80,90,100) })
-        Sec:Separator()
-
-        Win:Notify({ title="Info", text="Loaded!", duration=3 })
-        Win:Toggle()   -- hide/show
-        Win:Destroy()
---]]
-
-local Lib = {}
-Lib.__index = Lib
-
-local RS  = game:GetService("RunService")
+local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 
--- ── Theme ──────────────────────────────────────────────────────────────
-local T = {
+local SerotininLib = {}
+SerotininLib.__index = SerotininLib
+
+local Theme = {
     bg             = Color3.fromRGB(14, 16, 21),
     titlebar       = Color3.fromRGB(18, 21, 27),
-    tabbar         = Color3.fromRGB(17, 19, 25),
-    tab_act        = Color3.fromRGB(23, 27, 35),
-    tab_text       = Color3.fromRGB(100, 108, 122),
+    tabbar         = Color3.fromRGB(16, 19, 24),
+    tab_act        = Color3.fromRGB(22, 26, 34),
+    tab_text       = Color3.fromRGB(95, 104, 118),
     tab_text_act   = Color3.fromRGB(0, 210, 185),
     section_bg     = Color3.fromRGB(20, 23, 30),
-    section_brd    = Color3.fromRGB(32, 36, 47),
-    section_title  = Color3.fromRGB(190, 198, 210),
+    section_brd    = Color3.fromRGB(30, 35, 46),
+    section_title  = Color3.fromRGB(185, 195, 210),
     accent         = Color3.fromRGB(0, 205, 182),
-    accent2        = Color3.fromRGB(0, 155, 138),
-    text           = Color3.fromRGB(175, 182, 195),
-    text_dim       = Color3.fromRGB(90, 98, 112),
-    tgl_off        = Color3.fromRGB(38, 42, 54),
+    accent_dark    = Color3.fromRGB(0, 148, 132),
+    text           = Color3.fromRGB(172, 180, 195),
+    text_dim       = Color3.fromRGB(88, 96, 112),
+    tgl_off        = Color3.fromRGB(36, 41, 53),
     tgl_on         = Color3.fromRGB(0, 205, 182),
-    slider_bg      = Color3.fromRGB(32, 36, 47),
+    slider_bg      = Color3.fromRGB(30, 34, 45),
     slider_fill    = Color3.fromRGB(0, 205, 182),
-    dd_bg          = Color3.fromRGB(24, 27, 36),
-    dd_item        = Color3.fromRGB(29, 33, 43),
-    dd_hover       = Color3.fromRGB(0, 205, 182),
-    btn_bg         = Color3.fromRGB(28, 32, 42),
-    btn_hover      = Color3.fromRGB(0, 170, 152),
-    input_bg       = Color3.fromRGB(24, 27, 36),
-    kb_bg          = Color3.fromRGB(32, 36, 47),
-    sep            = Color3.fromRGB(32, 36, 47),
+    dd_bg          = Color3.fromRGB(22, 26, 34),
+    dd_item        = Color3.fromRGB(27, 31, 41),
+    dd_hover       = Color3.fromRGB(30, 50, 48),
+    dd_sel         = Color3.fromRGB(0, 60, 54),
+    btn_bg         = Color3.fromRGB(26, 30, 40),
+    btn_hover      = Color3.fromRGB(0, 148, 132),
+    input_bg       = Color3.fromRGB(22, 26, 34),
+    kb_bg          = Color3.fromRGB(28, 32, 43),
+    sep            = Color3.fromRGB(30, 35, 46),
+    win_border     = Color3.fromRGB(32, 38, 50),
     shadow         = Color3.fromRGB(4, 5, 8),
-    notify_bg      = Color3.fromRGB(20, 23, 30),
-    wborder        = Color3.fromRGB(35, 40, 52),
+    notif_bg       = Color3.fromRGB(19, 22, 29),
+    close          = Color3.fromRGB(180, 55, 55),
+    minimize       = Color3.fromRGB(0, 148, 132),
 }
 
--- ── Drawing helpers ───────────────────────────────────────────────────
-local pool = {}
-local _zBase = 0
+local _pool = {}
+local _windows = {}
+local _notifs = {}
+local _activeDD = nil
+local _listeningKB = nil
+local _listeningTI = nil
+local _zc = 0
 
-local function v2(x,y) return Vector2.new(x,y) end
-local function v3(r,g,b) return Vector3.new(r,g,b) end
-local function clamp(v,a,b) return math.max(a,math.min(b,v)) end
-local function hit(mx,my,x,y,w,h) return mx>=x and mx<=x+w and my>=y and my<=y+h end
-local function c3to3(c) return v3(c.R,c.G,c.B) end
+local function v2(x, y) return Vector2.new(x, y) end
+local function v3(r, g, b) return Vector3.new(r, g, b) end
+local function clamp(v, a, b) return math.max(a, math.min(b, v)) end
+local function hit(mx, my, x, y, w, h) return mx >= x and mx <= x+w and my >= y and my <= y+h end
 
 local function D(cls, props)
     local o = Drawing.new(cls)
-    for k,v in pairs(props) do o[k] = v end
-    pool[#pool+1] = o
+    for k, v in pairs(props) do o[k] = v end
+    _pool[#_pool+1] = o
     return o
 end
 
-local function sq(props)  return D("Square", props) end
-local function tx(props)  return D("Text",   props) end
-local function ln(props)  return D("Line",   props) end
-local function ci(props)  return D("Circle", props) end
+local function Sq(p)  return D("Square", p) end
+local function Tx(p)  return D("Text",   p) end
+local function Ci(p)  return D("Circle", p) end
 
-local function tint(c, t)
-    return Color3.new(
-        clamp(c.R + t, 0, 1),
-        clamp(c.G + t, 0, 1),
-        clamp(c.B + t, 0, 1)
-    )
-end
-
--- ── Mouse state ───────────────────────────────────────────────────────
 local mouse = { x=0, y=0, down=false, click=false, _prev=false }
 
 local function updateMouse()
     local p = UIS:GetMouseLocation()
     mouse.x, mouse.y = p.X, p.Y
-    mouse._prev  = mouse.down
-    mouse.down   = UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
-    mouse.click  = mouse.down and not mouse._prev
+    mouse._prev = mouse.down
+    mouse.down  = isleftpressed()
+    mouse.click = mouse.down and not mouse._prev
 end
 
--- ── Notifications ─────────────────────────────────────────────────────
-local _notifs = {}
+local EH = {
+    toggle=22, button=26, slider=36,
+    dropdown=42, multidropdown=42,
+    keybind=24, textinput=42,
+    colorpicker=26, label=18, separator=10,
+}
+
+local function secH(sec)
+    local h = 26
+    for _, el in ipairs(sec.elements) do
+        h = h + (EH[el.type] or 22)
+        if el.type == "colorpicker" and el.open then h = h + 72 end
+    end
+    return h + 8
+end
 
 local function pushNotif(cfg)
     local nW, nH = 230, 52
-    local sx, sy = 20, 20
-    local accent = cfg.color or T.accent
-    local t0     = tick()
-    local dur    = cfg.duration or 3
-
+    local col = cfg.color or Theme.accent
     local n = {
-        dur   = dur,
-        born  = t0,
-        slide = 0,
+        born = tick(),
+        dur  = cfg.duration or 3,
         alive = true,
-        _bg   = sq{Visible=false, Filled=true, Color=T.notify_bg, Opacity=0.97, Rounding=5, Position=v2(0,0), Size=v2(nW,nH), ZIndex=999},
-        _brd  = sq{Visible=false, Filled=false, Color=T.section_brd, Opacity=0.5, Thickness=1, Rounding=5, Position=v2(0,0), Size=v2(nW,nH), ZIndex=1000},
-        _bar  = sq{Visible=false, Filled=true, Color=accent, Opacity=1, Rounding=2, Position=v2(0,0), Size=v2(3,nH-8), ZIndex=1001},
-        _prog = sq{Visible=false, Filled=true, Color=accent, Opacity=0.35, Rounding=0, Position=v2(0,0), Size=v2(nW,2), ZIndex=1001},
-        _ttl  = tx{Visible=false, Color=accent, Opacity=1, Size=13, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=cfg.title or "Notice", ZIndex=1002},
-        _txt  = tx{Visible=false, Color=T.text, Opacity=1, Size=12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=cfg.text or "", ZIndex=1002},
+        _bg   = Sq{Visible=false, Filled=true,  Color=Theme.notif_bg,  Opacity=0.97, Rounding=5, Position=v2(0,0), Size=v2(nW,nH),    ZIndex=990},
+        _brd  = Sq{Visible=false, Filled=false, Color=Theme.section_brd, Opacity=0.5, Thickness=1, Rounding=5, Position=v2(0,0), Size=v2(nW,nH), ZIndex=991},
+        _bar  = Sq{Visible=false, Filled=true,  Color=col,             Opacity=1,    Rounding=2, Position=v2(0,0), Size=v2(3,nH-8),   ZIndex=992},
+        _prog = Sq{Visible=false, Filled=true,  Color=col,             Opacity=0.3,  Rounding=0, Position=v2(0,0), Size=v2(nW,2),     ZIndex=992},
+        _ttl  = Tx{Visible=false, Color=col,    Opacity=1,  Size=13, Center=false, Outline=true,  OutlineColor=v3(0,0,0), Position=v2(0,0), Text=cfg.title or "Notice",  ZIndex=993},
+        _msg  = Tx{Visible=false, Color=Theme.text, Opacity=1, Size=12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=cfg.text  or "",        ZIndex=993},
     }
     _notifs[#_notifs+1] = n
-    return n
 end
 
-local function renderNotifs(sw, sh)
-    local bx = sw - 250
-    local by = sh - 70
+local function renderNotifs()
+    local vp = workspace.CurrentCamera.ViewportSize
+    local bx = vp.X - 252
+    local by = vp.Y - 72
     local alive = {}
     for _, n in ipairs(_notifs) do
-        if n.alive then
-            local elapsed = tick() - n.born
-            local nW, nH = 230, 52
-            local t = clamp(elapsed / 0.25, 0, 1)
-            local fade = clamp((n.dur - elapsed) / 0.4, 0, 1)
-            local slide = clamp(t, 0, 1)
-            local ox = (1 - slide) * (nW + 20)
-            local x, y = bx + ox, by
-            local vis = elapsed < n.dur + 0.4
-
-            if not vis then n.alive = false end
-
-            n._bg.Position, n._bg.Size, n._bg.Opacity, n._bg.Visible = v2(x,y), v2(nW,nH), 0.97*fade, vis
-            n._brd.Position, n._brd.Size, n._brd.Opacity, n._brd.Visible = v2(x,y), v2(nW,nH), 0.5*fade, vis
-            n._bar.Position, n._bar.Size, n._bar.Opacity, n._bar.Visible = v2(x+6,y+4), v2(3,nH-8), fade, vis
-            local prog = clamp(1 - elapsed/n.dur, 0, 1)
-            n._prog.Position, n._prog.Size, n._prog.Opacity, n._prog.Visible = v2(x,y+nH-2), v2(nW*prog,2), 0.35*fade, vis
-            n._ttl.Position, n._ttl.Opacity, n._ttl.Visible = v2(x+14,y+8), fade, vis
-            n._txt.Position, n._txt.Opacity, n._txt.Visible = v2(x+14,y+27), 0.85*fade, vis
-
-            alive[#alive+1] = n
-        end
+        local e = tick() - n.born
+        local nW, nH = 230, 52
+        local slide = clamp(e / 0.22, 0, 1)
+        local fade  = clamp((n.dur - e) / 0.35, 0, 1)
+        local ox    = (1 - slide) * (nW + 30)
+        local x, y  = bx + ox, by
+        local vis   = e < n.dur + 0.38
+        if not vis then n.alive = false end
+        n._bg.Position,   n._bg.Size,   n._bg.Opacity,   n._bg.Visible   = v2(x,y), v2(nW,nH),    0.97*fade, vis
+        n._brd.Position,  n._brd.Size,  n._brd.Opacity,  n._brd.Visible  = v2(x,y), v2(nW,nH),    0.5*fade,  vis
+        n._bar.Position,  n._bar.Size,  n._bar.Opacity,  n._bar.Visible  = v2(x+6,y+4), v2(3,nH-8), fade,    vis
+        n._prog.Position, n._prog.Size, n._prog.Opacity, n._prog.Visible = v2(x,y+nH-2), v2(nW*clamp(1-e/n.dur,0,1),2), 0.3*fade, vis
+        n._ttl.Position,  n._ttl.Opacity,  n._ttl.Visible  = v2(x+14,y+8),  fade,       vis
+        n._msg.Position,  n._msg.Opacity,  n._msg.Visible  = v2(x+14,y+27), 0.85*fade,  vis
+        if n.alive then alive[#alive+1] = n end
     end
     _notifs = alive
 end
 
--- ── Window ────────────────────────────────────────────────────────────
-local _windows = {}
-local _activeDropdown = nil
-local _listeningKB    = nil
-local _listeningTI    = nil
+UIS.InputBegan:Connect(function(inp, gp)
+    if gp then return end
+    if inp.UserInputType == Enum.UserInputType.Keyboard then
+        if _listeningKB then
+            local kn = inp.KeyCode == Enum.KeyCode.Escape and "Unbound" or inp.KeyCode.Name
+            _listeningKB.value = kn
+            _listeningKB._val.Text = kn
+            _listeningKB.listening = false
+            pcall(_listeningKB.cb, kn)
+            _listeningKB = nil
+            return
+        end
+        if _listeningTI then
+            local kc = inp.KeyCode
+            if kc == Enum.KeyCode.Return or kc == Enum.KeyCode.Escape then
+                _listeningTI.focused = false
+                pcall(_listeningTI.cb, _listeningTI.value)
+                _listeningTI = nil
+            elseif kc == Enum.KeyCode.Backspace then
+                if #_listeningTI.value > 0 then
+                    _listeningTI.value = _listeningTI.value:sub(1, -2)
+                end
+            else
+                local n = kc.Name
+                if #n == 1 then
+                    local sh = UIS:IsKeyDown(Enum.KeyCode.LeftShift) or UIS:IsKeyDown(Enum.KeyCode.RightShift)
+                    _listeningTI.value = _listeningTI.value .. (sh and n:upper() or n:lower())
+                end
+            end
+        end
+    end
+end)
 
-function Lib.new(cfg)
+function SerotininLib.new(cfg)
     cfg = cfg or {}
-    local self = setmetatable({}, Lib)
-    self.title   = cfg.title   or "SerotininLib"
-    self.x       = cfg.x       or 100
-    self.y       = cfg.y       or 100
-    self.width   = cfg.width   or 620
-    self.height  = cfg.height  or 430
-    self.visible = true
-    self.tabs    = {}
+    local self = setmetatable({}, SerotininLib)
+    self.title     = cfg.title  or "SerotininLib"
+    self.x         = cfg.x     or 100
+    self.y         = cfg.y     or 100
+    self.width     = cfg.width  or 620
+    self.height    = cfg.height or 430
+    self.visible   = true
+    self.minimised = false
+    self.tabs      = {}
     self.activeTab = nil
-    self._drag = false
-    self._dox  = 0
-    self._doy  = 0
+    self._drag     = false
+    self._dox      = 0
+    self._doy      = 0
 
     local W, H = self.width, self.height
-    local z = _zBase; _zBase = _zBase + 200
+    local z = _zc; _zc = _zc + 200
 
-    self._shad  = sq{Visible=false, Filled=true, Color=T.shadow, Opacity=0.55, Rounding=6, Position=v2(0,0), Size=v2(W+8,H+8), ZIndex=z}
-    self._bg    = sq{Visible=false, Filled=true, Color=T.bg, Opacity=0.98, Rounding=5, Position=v2(0,0), Size=v2(W,H), ZIndex=z+1}
-    self._brd   = sq{Visible=false, Filled=false, Color=T.wborder, Opacity=0.5, Thickness=1, Rounding=5, Position=v2(0,0), Size=v2(W,H), ZIndex=z+2}
+    self._shad   = Sq{Visible=false, Filled=true,  Color=Theme.shadow,     Opacity=0.6,  Rounding=6, Position=v2(0,0), Size=v2(W+8,H+8), ZIndex=z}
+    self._bg     = Sq{Visible=false, Filled=true,  Color=Theme.bg,         Opacity=0.99, Rounding=5, Position=v2(0,0), Size=v2(W,H),     ZIndex=z+1}
+    self._brd    = Sq{Visible=false, Filled=false, Color=Theme.win_border, Opacity=0.5,  Thickness=1, Rounding=5, Position=v2(0,0), Size=v2(W,H), ZIndex=z+2}
+    self._tbar_r = Sq{Visible=false, Filled=true,  Color=Theme.titlebar,   Opacity=1,    Rounding=5, Position=v2(0,0), Size=v2(W,20),    ZIndex=z+3}
+    self._tbar   = Sq{Visible=false, Filled=true,  Color=Theme.titlebar,   Opacity=1,    Rounding=0, Position=v2(0,0), Size=v2(W,30),    ZIndex=z+3}
+    self._tdot   = Ci{Visible=false, Filled=true,  Color=Theme.accent,     Opacity=1,    Radius=4,   Position=v2(0,0),                   ZIndex=z+5}
+    self._ttxt   = Tx{Visible=false, Color=Theme.accent, Opacity=1, Size=14, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=self.title, ZIndex=z+5}
+    self._tacc   = Sq{Visible=false, Filled=true,  Color=Theme.accent,     Opacity=0.65, Position=v2(0,0), Size=v2(W,1), ZIndex=z+6}
+    self._tbbar  = Sq{Visible=false, Filled=true,  Color=Theme.tabbar,     Opacity=1,    Position=v2(0,0), Size=v2(W,30), ZIndex=z+3}
+    self._tbacc  = Sq{Visible=false, Filled=true,  Color=Theme.section_brd, Opacity=0.45, Position=v2(0,0), Size=v2(W,1), ZIndex=z+4}
 
-    self._tbar_r = sq{Visible=false, Filled=true, Color=T.titlebar, Opacity=1, Rounding=5, Position=v2(0,0), Size=v2(W,20), ZIndex=z+3}
-    self._tbar   = sq{Visible=false, Filled=true, Color=T.titlebar, Opacity=1, Rounding=0, Position=v2(0,0), Size=v2(W,32), ZIndex=z+3}
-    self._tdot   = ci{Visible=false, Filled=true, Color=T.accent, Opacity=1, Radius=4, Position=v2(0,0), ZIndex=z+5}
-    self._ttxt   = tx{Visible=false, Color=T.accent, Opacity=1, Size=14, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=self.title, ZIndex=z+5}
-    self._tacc   = sq{Visible=false, Filled=true, Color=T.accent, Opacity=0.7, Position=v2(0,0), Size=v2(W,1), ZIndex=z+6}
-    self._tbbar  = sq{Visible=false, Filled=true, Color=T.tabbar, Opacity=1, Position=v2(0,0), Size=v2(W,30), ZIndex=z+3}
-    self._tbacc  = sq{Visible=false, Filled=true, Color=T.section_brd, Opacity=0.5, Position=v2(0,0), Size=v2(W,1), ZIndex=z+4}
-
-    self._close = {
-        _bg  = sq{Visible=false, Filled=true, Color=Color3.fromRGB(185,60,60), Opacity=1, Rounding=3, Position=v2(0,0), Size=v2(14,14), ZIndex=z+7},
-        _txt = tx{Visible=false, Color=Color3.fromRGB(255,255,255), Opacity=1, Size=12, Center=true, Outline=false, Position=v2(0,0), Text="×", ZIndex=z+8},
+    self._cbtn = {
+        _bg  = Sq{Visible=false, Filled=true, Color=Theme.close,    Opacity=1, Rounding=3, Position=v2(0,0), Size=v2(14,14), ZIndex=z+7},
+        _txt = Tx{Visible=false, Color=Color3.fromRGB(255,255,255), Opacity=1, Size=12, Center=true, Outline=false, Position=v2(0,0), Text="×", ZIndex=z+8},
     }
-    self._min = {
-        _bg  = sq{Visible=false, Filled=true, Color=T.accent2, Opacity=1, Rounding=3, Position=v2(0,0), Size=v2(14,14), ZIndex=z+7},
-        _txt = tx{Visible=false, Color=Color3.fromRGB(255,255,255), Opacity=1, Size=12, Center=true, Outline=false, Position=v2(0,0), Text="−", ZIndex=z+8},
+    self._mbtn = {
+        _bg  = Sq{Visible=false, Filled=true, Color=Theme.minimize, Opacity=1, Rounding=3, Position=v2(0,0), Size=v2(14,14), ZIndex=z+7},
+        _txt = Tx{Visible=false, Color=Color3.fromRGB(255,255,255), Opacity=1, Size=12, Center=true, Outline=false, Position=v2(0,0), Text="−", ZIndex=z+8},
     }
 
     _windows[#_windows+1] = self
 
-    -- ── Tab ─────────────────────────────────────────────────────────────
     function self:Tab(name)
-        local tab = {name=name, win=self, sections={}, idx=#self.tabs+1}
-        local tz = z + 10 + tab.idx * 4
-        tab._bg   = sq{Visible=false, Filled=true, Color=T.tabbar, Opacity=0, Rounding=0, Position=v2(0,0), Size=v2(0,30), ZIndex=tz}
-        tab._txt  = tx{Visible=false, Color=T.tab_text, Opacity=1, Size=12, Center=true, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=name, ZIndex=tz+1}
-        tab._line = sq{Visible=false, Filled=true, Color=T.accent, Opacity=0, Position=v2(0,0), Size=v2(0,2), ZIndex=tz+2}
+        local tab = { name=name, win=self, sections={}, idx=#self.tabs+1 }
+        local tz = z + 10 + tab.idx*4
+        tab._bg   = Sq{Visible=false, Filled=true, Color=Theme.tabbar, Opacity=0, Rounding=0, Position=v2(0,0), Size=v2(0,30), ZIndex=tz}
+        tab._txt  = Tx{Visible=false, Color=Theme.tab_text, Opacity=1, Size=12, Center=true, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=name, ZIndex=tz+1}
+        tab._line = Sq{Visible=false, Filled=true, Color=Theme.accent, Opacity=0, Position=v2(0,0), Size=v2(0,2), ZIndex=tz+2}
         self.tabs[#self.tabs+1] = tab
         if not self.activeTab then self.activeTab = tab end
 
-        -- ── Section ───────────────────────────────────────────────────────
         function tab:Section(cfg2)
             cfg2 = cfg2 or {}
-            local sec = {name=cfg2.name or "", side=cfg2.side or "left", tab=tab, elements={}}
-            local sz2 = tz + 20 + #tab.sections * 8
-            sec._bg  = sq{Visible=false, Filled=true, Color=T.section_bg, Opacity=0.96, Rounding=4, Position=v2(0,0), Size=v2(0,0), ZIndex=sz2}
-            sec._brd = sq{Visible=false, Filled=false, Color=T.section_brd, Opacity=0.45, Thickness=1, Rounding=4, Position=v2(0,0), Size=v2(0,0), ZIndex=sz2+1}
-            sec._ttl = tx{Visible=false, Color=T.section_title, Opacity=1, Size=12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=sec.name, ZIndex=sz2+2}
-            sec._sep = sq{Visible=false, Filled=true, Color=T.accent2, Opacity=0.4, Position=v2(0,0), Size=v2(0,1), ZIndex=sz2+2}
+            local sec = { name=cfg2.name or "", side=cfg2.side or "left", tab=tab, elements={} }
+            local sz = tz + 20 + #tab.sections*8
+            sec._bg  = Sq{Visible=false, Filled=true,  Color=Theme.section_bg,  Opacity=0.96, Rounding=4, Position=v2(0,0), Size=v2(0,0), ZIndex=sz}
+            sec._brd = Sq{Visible=false, Filled=false, Color=Theme.section_brd, Opacity=0.45, Thickness=1, Rounding=4, Position=v2(0,0), Size=v2(0,0), ZIndex=sz+1}
+            sec._ttl = Tx{Visible=false, Color=Theme.section_title, Opacity=1, Size=12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=sec.name, ZIndex=sz+2}
+            sec._sep = Sq{Visible=false, Filled=true, Color=Theme.accent_dark, Opacity=0.35, Position=v2(0,0), Size=v2(0,1), ZIndex=sz+2}
             tab.sections[#tab.sections+1] = sec
 
-            local function newZ() return sz2 + 3 + #sec.elements * 6 end
+            local function nz() return sz + 3 + #sec.elements*6 end
 
-            -- Toggle ───────────────────────────────────────────────────
             function sec:Toggle(c)
-                local el = {type="toggle", name=c.name or "", value=c.default~=nil and c.default or false, cb=c.callback or function()end}
-                local ez = newZ()
-                el._box  = sq{Visible=false, Filled=true, Color=T.tgl_off, Opacity=1, Rounding=3, Position=v2(0,0), Size=v2(32,16), ZIndex=ez}
-                el._knob = ci{Visible=false, Filled=true, Color=Color3.fromRGB(230,235,245), Opacity=1, Radius=6, Position=v2(0,0), ZIndex=ez+1}
-                el._txt  = tx{Visible=false, Color=T.text, Opacity=1, Size=12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=el.name, ZIndex=ez+1}
+                local el = { type="toggle", name=c.name or "", value=c.default~=nil and c.default or false, cb=c.callback or function()end }
+                local ez = nz()
+                el._box  = Sq{Visible=false, Filled=true, Color=Theme.tgl_off, Opacity=1, Rounding=8, Position=v2(0,0), Size=v2(32,16), ZIndex=ez}
+                el._knob = Ci{Visible=false, Filled=true, Color=Color3.fromRGB(228,232,242), Opacity=1, Radius=6, Position=v2(0,0), ZIndex=ez+1}
+                el._txt  = Tx{Visible=false, Color=Theme.text, Opacity=1, Size=12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=el.name, ZIndex=ez+1}
                 sec.elements[#sec.elements+1] = el
                 function el:Set(v) el.value = v end
                 function el:Get() return el.value end
                 return el
             end
 
-            -- Button ───────────────────────────────────────────────────
             function sec:Button(c)
-                local el = {type="button", name=c.name or "", cb=c.callback or function()end, _hover=false}
-                local ez = newZ()
-                el._bg  = sq{Visible=false, Filled=true, Color=T.btn_bg, Opacity=1, Rounding=4, Position=v2(0,0), Size=v2(0,22), ZIndex=ez}
-                el._brd = sq{Visible=false, Filled=false, Color=T.section_brd, Opacity=0.4, Thickness=1, Rounding=4, Position=v2(0,0), Size=v2(0,22), ZIndex=ez+1}
-                el._txt = tx{Visible=false, Color=T.text, Opacity=1, Size=12, Center=true, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=el.name, ZIndex=ez+2}
+                local el = { type="button", name=c.name or "", cb=c.callback or function()end }
+                local ez = nz()
+                el._bg  = Sq{Visible=false, Filled=true,  Color=Theme.btn_bg,      Opacity=1, Rounding=4, Position=v2(0,0), Size=v2(0,22), ZIndex=ez}
+                el._brd = Sq{Visible=false, Filled=false, Color=Theme.section_brd, Opacity=0.4, Thickness=1, Rounding=4, Position=v2(0,0), Size=v2(0,22), ZIndex=ez+1}
+                el._txt = Tx{Visible=false, Color=Theme.text, Opacity=1, Size=12, Center=true, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=el.name, ZIndex=ez+2}
                 sec.elements[#sec.elements+1] = el
-                function el:SetLabel(s) el.name = s end
+                function el:SetLabel(s) el.name = s; el._txt.Text = s end
                 return el
             end
 
-            -- Slider ───────────────────────────────────────────────────
             function sec:Slider(c)
-                local el = {type="slider", name=c.name or "", min=c.min or 0, max=c.max or 100, value=c.default or 0, dec=c.decimals or 0, cb=c.callback or function()end, _sliding=false}
-                local ez = newZ()
-                el._txt  = tx{Visible=false, Color=T.text, Opacity=1, Size=12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=el.name, ZIndex=ez+1}
-                el._val  = tx{Visible=false, Color=T.accent, Opacity=1, Size=12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text="0", ZIndex=ez+1}
-                el._bg   = sq{Visible=false, Filled=true, Color=T.slider_bg, Opacity=1, Rounding=3, Position=v2(0,0), Size=v2(0,5), ZIndex=ez}
-                el._fill = sq{Visible=false, Filled=true, Color=T.slider_fill, Opacity=1, Rounding=3, Position=v2(0,0), Size=v2(0,5), ZIndex=ez+1}
-                el._knob = ci{Visible=false, Filled=true, Color=Color3.fromRGB(220,235,235), Opacity=1, Radius=5, Position=v2(0,0), ZIndex=ez+2}
+                local el = { type="slider", name=c.name or "", min=c.min or 0, max=c.max or 100, value=c.default or 0, dec=c.decimals or 0, cb=c.callback or function()end, _sl=false }
+                local ez = nz()
+                el._txt  = Tx{Visible=false, Color=Theme.text,   Opacity=1, Size=12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=el.name, ZIndex=ez+1}
+                el._val  = Tx{Visible=false, Color=Theme.accent, Opacity=1, Size=12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text="0",     ZIndex=ez+1}
+                el._bg   = Sq{Visible=false, Filled=true, Color=Theme.slider_bg,   Opacity=1, Rounding=3, Position=v2(0,0), Size=v2(0,5), ZIndex=ez}
+                el._fill = Sq{Visible=false, Filled=true, Color=Theme.slider_fill, Opacity=1, Rounding=3, Position=v2(0,0), Size=v2(0,5), ZIndex=ez+1}
+                el._knob = Ci{Visible=false, Filled=true, Color=Color3.fromRGB(210,230,228), Opacity=1, Radius=5, Position=v2(0,0), ZIndex=ez+2}
                 sec.elements[#sec.elements+1] = el
                 function el:Set(v)
                     el.value = clamp(v, el.min, el.max)
@@ -273,22 +265,20 @@ function Lib.new(cfg)
                 return el
             end
 
-            -- Dropdown ─────────────────────────────────────────────────
             function sec:Dropdown(c)
-                local el = {type="dropdown", name=c.name or "", options=c.options or {}, value=c.default or (c.options and c.options[1]) or "None", cb=c.callback or function()end, open=false}
-                local ez = newZ()
-                el._lbl   = tx{Visible=false, Color=T.text_dim, Opacity=1, Size=11, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=el.name, ZIndex=ez}
-                el._bg    = sq{Visible=false, Filled=true, Color=T.dd_bg, Opacity=1, Rounding=3, Position=v2(0,0), Size=v2(0,22), ZIndex=ez+1}
-                el._brd   = sq{Visible=false, Filled=false, Color=T.section_brd, Opacity=0.5, Thickness=1, Rounding=3, Position=v2(0,0), Size=v2(0,22), ZIndex=ez+2}
-                el._val   = tx{Visible=false, Color=T.text, Opacity=1, Size=12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=el.value, ZIndex=ez+3}
-                el._arr   = tx{Visible=false, Color=T.text_dim, Opacity=0.8, Size=11, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text="▾", ZIndex=ez+3}
+                local el = { type="dropdown", name=c.name or "", options=c.options or {}, value=c.default or (c.options and c.options[1]) or "", cb=c.callback or function()end, open=false }
+                local ez = nz()
+                el._lbl  = Tx{Visible=false, Color=Theme.text_dim, Opacity=1, Size=11, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=el.name,  ZIndex=ez}
+                el._bg   = Sq{Visible=false, Filled=true,  Color=Theme.dd_bg,       Opacity=1, Rounding=3, Position=v2(0,0), Size=v2(0,22), ZIndex=ez+1}
+                el._brd  = Sq{Visible=false, Filled=false, Color=Theme.section_brd, Opacity=0.5, Thickness=1, Rounding=3, Position=v2(0,0), Size=v2(0,22), ZIndex=ez+2}
+                el._val  = Tx{Visible=false, Color=Theme.text,    Opacity=1, Size=12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=el.value, ZIndex=ez+3}
+                el._arr  = Tx{Visible=false, Color=Theme.text_dim, Opacity=0.8, Size=11, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text="▾",   ZIndex=ez+3}
                 el._opts = {}
                 for i, opt in ipairs(el.options) do
-                    local o = {
-                        _bg  = sq{Visible=false, Filled=true, Color=T.dd_item, Opacity=1, Rounding=0, Position=v2(0,0), Size=v2(0,22), ZIndex=500+ez+i},
-                        _txt = tx{Visible=false, Color=T.text, Opacity=1, Size=12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=opt, ZIndex=501+ez+i},
+                    el._opts[i] = {
+                        _bg  = Sq{Visible=false, Filled=true, Color=Theme.dd_item, Opacity=1, Rounding=0, Position=v2(0,0), Size=v2(0,22), ZIndex=500+ez+i},
+                        _txt = Tx{Visible=false, Color=Theme.text, Opacity=1, Size=12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=opt, ZIndex=501+ez+i},
                     }
-                    el._opts[i] = o
                 end
                 sec.elements[#sec.elements+1] = el
                 function el:Set(v) el.value = v; el._val.Text = v; pcall(el.cb, v) end
@@ -297,25 +287,23 @@ function Lib.new(cfg)
                 return el
             end
 
-            -- MultiDropdown ────────────────────────────────────────────
             function sec:MultiDropdown(c)
                 local sel = {}
                 for _, d in ipairs(c.default or {}) do sel[d] = true end
-                local el = {type="multidropdown", name=c.name or "", options=c.options or {}, selected=sel, cb=c.callback or function()end, open=false}
-                local ez = newZ()
-                el._lbl  = tx{Visible=false, Color=T.text_dim, Opacity=1, Size=11, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=el.name, ZIndex=ez}
-                el._bg   = sq{Visible=false, Filled=true, Color=T.dd_bg, Opacity=1, Rounding=3, Position=v2(0,0), Size=v2(0,22), ZIndex=ez+1}
-                el._brd  = sq{Visible=false, Filled=false, Color=T.section_brd, Opacity=0.5, Thickness=1, Rounding=3, Position=v2(0,0), Size=v2(0,22), ZIndex=ez+2}
-                el._val  = tx{Visible=false, Color=T.text, Opacity=1, Size=12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text="None", ZIndex=ez+3}
-                el._arr  = tx{Visible=false, Color=T.text_dim, Opacity=0.8, Size=11, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text="▾", ZIndex=ez+3}
+                local el = { type="multidropdown", name=c.name or "", options=c.options or {}, selected=sel, cb=c.callback or function()end, open=false }
+                local ez = nz()
+                el._lbl  = Tx{Visible=false, Color=Theme.text_dim, Opacity=1, Size=11, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=el.name, ZIndex=ez}
+                el._bg   = Sq{Visible=false, Filled=true,  Color=Theme.dd_bg,       Opacity=1, Rounding=3, Position=v2(0,0), Size=v2(0,22), ZIndex=ez+1}
+                el._brd  = Sq{Visible=false, Filled=false, Color=Theme.section_brd, Opacity=0.5, Thickness=1, Rounding=3, Position=v2(0,0), Size=v2(0,22), ZIndex=ez+2}
+                el._val  = Tx{Visible=false, Color=Theme.text, Opacity=1, Size=12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text="None", ZIndex=ez+3}
+                el._arr  = Tx{Visible=false, Color=Theme.text_dim, Opacity=0.8, Size=11, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text="▾", ZIndex=ez+3}
                 el._opts = {}
                 for i, opt in ipairs(el.options) do
-                    local o = {
-                        _bg  = sq{Visible=false, Filled=true, Color=T.dd_item, Opacity=1, Rounding=0, Position=v2(0,0), Size=v2(0,22), ZIndex=500+ez+i},
-                        _chk = sq{Visible=false, Filled=true, Color=T.tgl_off, Opacity=1, Rounding=2, Position=v2(0,0), Size=v2(10,10), ZIndex=502+ez+i},
-                        _txt = tx{Visible=false, Color=T.text, Opacity=1, Size=12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=opt, ZIndex=501+ez+i},
+                    el._opts[i] = {
+                        _bg  = Sq{Visible=false, Filled=true, Color=Theme.dd_item, Opacity=1, Rounding=0, Position=v2(0,0), Size=v2(0,22), ZIndex=500+ez+i},
+                        _chk = Sq{Visible=false, Filled=true, Color=Theme.tgl_off, Opacity=1, Rounding=2, Position=v2(0,0), Size=v2(10,10), ZIndex=502+ez+i},
+                        _txt = Tx{Visible=false, Color=Theme.text, Opacity=1, Size=12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=opt, ZIndex=501+ez+i},
                     }
-                    el._opts[i] = o
                 end
                 local function getText()
                     local ks = {}
@@ -324,8 +312,8 @@ function Lib.new(cfg)
                     if #ks > 2  then return ks[1] .. " (+" .. (#ks-1) .. ")" end
                     return table.concat(ks, ", ")
                 end
-                sec.elements[#sec.elements+1] = el
                 el._getText = getText
+                sec.elements[#sec.elements+1] = el
                 function el:Get()
                     local t = {}
                     for k, v in pairs(el.selected) do if v then t[#t+1] = k end end
@@ -340,55 +328,51 @@ function Lib.new(cfg)
                 return el
             end
 
-            -- Keybind ──────────────────────────────────────────────────
             function sec:Keybind(c)
-                local el = {type="keybind", name=c.name or "", value=c.default or "Unbound", cb=c.callback or function()end, listening=false}
-                local ez = newZ()
-                el._txt = tx{Visible=false, Color=T.text, Opacity=1, Size=12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=el.name, ZIndex=ez+1}
-                el._bg  = sq{Visible=false, Filled=true, Color=T.kb_bg, Opacity=1, Rounding=3, Position=v2(0,0), Size=v2(60,18), ZIndex=ez}
-                el._brd = sq{Visible=false, Filled=false, Color=T.section_brd, Opacity=0.4, Thickness=1, Rounding=3, Position=v2(0,0), Size=v2(60,18), ZIndex=ez+1}
-                el._val = tx{Visible=false, Color=T.text_dim, Opacity=1, Size=11, Center=true, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=el.value, ZIndex=ez+2}
+                local el = { type="keybind", name=c.name or "", value=c.default or "Unbound", cb=c.callback or function()end, listening=false }
+                local ez = nz()
+                el._txt = Tx{Visible=false, Color=Theme.text, Opacity=1, Size=12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=el.name, ZIndex=ez+1}
+                el._bg  = Sq{Visible=false, Filled=true,  Color=Theme.kb_bg,       Opacity=1, Rounding=3, Position=v2(0,0), Size=v2(60,18), ZIndex=ez}
+                el._brd = Sq{Visible=false, Filled=false, Color=Theme.section_brd, Opacity=0.4, Thickness=1, Rounding=3, Position=v2(0,0), Size=v2(60,18), ZIndex=ez+1}
+                el._val = Tx{Visible=false, Color=Theme.text_dim, Opacity=1, Size=11, Center=true, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=el.value, ZIndex=ez+2}
                 sec.elements[#sec.elements+1] = el
                 function el:Get() return el.value end
                 function el:Set(k) el.value = k; el._val.Text = k end
                 return el
             end
 
-            -- TextInput ────────────────────────────────────────────────
             function sec:TextInput(c)
-                local el = {type="textinput", name=c.name or "", value="", placeholder=c.placeholder or "", cb=c.callback or function()end, focused=false, cursor=0, _blink=0}
-                local ez = newZ()
-                el._lbl   = tx{Visible=false, Color=T.text_dim, Opacity=1, Size=11, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=el.name, ZIndex=ez}
-                el._bg    = sq{Visible=false, Filled=true, Color=T.input_bg, Opacity=1, Rounding=3, Position=v2(0,0), Size=v2(0,22), ZIndex=ez+1}
-                el._brd   = sq{Visible=false, Filled=false, Color=T.section_brd, Opacity=0.4, Thickness=1, Rounding=3, Position=v2(0,0), Size=v2(0,22), ZIndex=ez+2}
-                el._txt   = tx{Visible=false, Color=T.text, Opacity=1, Size=12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text="", ZIndex=ez+3}
-                el._cur   = sq{Visible=false, Filled=true, Color=T.accent, Opacity=1, Position=v2(0,0), Size=v2(1,14), ZIndex=ez+4}
+                local el = { type="textinput", name=c.name or "", value="", placeholder=c.placeholder or "", cb=c.callback or function()end, focused=false, _blink=0 }
+                local ez = nz()
+                el._lbl = Tx{Visible=false, Color=Theme.text_dim, Opacity=1, Size=11, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=el.name, ZIndex=ez}
+                el._bg  = Sq{Visible=false, Filled=true,  Color=Theme.input_bg,     Opacity=1, Rounding=3, Position=v2(0,0), Size=v2(0,22), ZIndex=ez+1}
+                el._brd = Sq{Visible=false, Filled=false, Color=Theme.section_brd,  Opacity=0.4, Thickness=1, Rounding=3, Position=v2(0,0), Size=v2(0,22), ZIndex=ez+2}
+                el._txt = Tx{Visible=false, Color=Theme.text, Opacity=1, Size=12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text="", ZIndex=ez+3}
+                el._cur = Sq{Visible=false, Filled=true, Color=Theme.accent, Opacity=1, Position=v2(0,0), Size=v2(1,13), ZIndex=ez+4}
                 sec.elements[#sec.elements+1] = el
                 function el:Get() return el.value end
-                function el:Set(s) el.value = s; el.cursor = #s end
+                function el:Set(s) el.value = s end
                 return el
             end
 
-            -- ColorPicker ──────────────────────────────────────────────
             function sec:ColorPicker(c)
                 local col = c.default or Color3.fromRGB(0,205,182)
-                local h, s, v2_ = Color3.toHSV(col)
-                local el = {type="colorpicker", name=c.name or "", color=col, h=h, s=s, v=v2_, cb=c.callback or function()end, open=false, _slidingH=false, _slidingS=false, _slidingV=false}
-                local ez = newZ()
-                el._lbl    = tx{Visible=false, Color=T.text, Opacity=1, Size=12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=el.name, ZIndex=ez+1}
-                el._prev   = sq{Visible=false, Filled=true, Color=col, Opacity=1, Rounding=3, Position=v2(0,0), Size=v2(40,16), ZIndex=ez+1}
-                el._prevbrd = sq{Visible=false, Filled=false, Color=T.section_brd, Opacity=0.5, Thickness=1, Rounding=3, Position=v2(0,0), Size=v2(40,16), ZIndex=ez+2}
-                local function mkSlider(initV, zlv)
+                local h, s, vv = Color3.toHSV(col)
+                local el = { type="colorpicker", name=c.name or "", color=col, h=h, s=s, v=vv, cb=c.callback or function()end, open=false }
+                local ez = nz()
+                el._lbl      = Tx{Visible=false, Color=Theme.text, Opacity=1, Size=12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=el.name, ZIndex=ez+1}
+                el._prev     = Sq{Visible=false, Filled=true,  Color=col,             Opacity=1, Rounding=3, Position=v2(0,0), Size=v2(38,16), ZIndex=ez+1}
+                el._prevbrd  = Sq{Visible=false, Filled=false, Color=Theme.section_brd, Opacity=0.5, Thickness=1, Rounding=3, Position=v2(0,0), Size=v2(38,16), ZIndex=ez+2}
+                local function mkCS(zlv)
                     return {
-                        _bg   = sq{Visible=false, Filled=true, Color=T.slider_bg, Opacity=1, Rounding=3, Position=v2(0,0), Size=v2(0,5), ZIndex=zlv},
-                        _fill = sq{Visible=false, Filled=true, Color=T.slider_fill, Opacity=1, Rounding=3, Position=v2(0,0), Size=v2(0,5), ZIndex=zlv+1},
-                        _knob = ci{Visible=false, Filled=true, Color=Color3.fromRGB(220,235,235), Opacity=1, Radius=5, Position=v2(0,0), ZIndex=zlv+2},
-                        _lbl  = tx{Visible=false, Color=T.text_dim, Opacity=1, Size=10, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text="", ZIndex=zlv+1},
+                        _lbl  = Tx{Visible=false, Color=Theme.text_dim, Opacity=1, Size=10, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text="", ZIndex=zlv},
+                        _bg   = Sq{Visible=false, Filled=true, Color=Theme.slider_bg,   Opacity=1, Rounding=3, Position=v2(0,0), Size=v2(0,5), ZIndex=zlv+1},
+                        _fill = Sq{Visible=false, Filled=true, Color=Theme.slider_fill, Opacity=1, Rounding=3, Position=v2(0,0), Size=v2(0,5), ZIndex=zlv+2},
+                        _knob = Ci{Visible=false, Filled=true, Color=Color3.fromRGB(220,232,230), Opacity=1, Radius=5, Position=v2(0,0), ZIndex=zlv+3},
+                        _sl   = false,
                     }
                 end
-                el._sH = mkSlider(h, ez+10)
-                el._sS = mkSlider(s, ez+10)
-                el._sV = mkSlider(v2_, ez+10)
+                el._sH = mkCS(ez+10); el._sS = mkCS(ez+10); el._sV = mkCS(ez+10)
                 sec.elements[#sec.elements+1] = el
                 function el:Get() return el.color end
                 function el:Set(c2)
@@ -400,21 +384,19 @@ function Lib.new(cfg)
                 return el
             end
 
-            -- Label ────────────────────────────────────────────────────
             function sec:Label(c)
-                local el = {type="label", text=c.text or ""}
-                local ez = newZ()
-                el._txt = tx{Visible=false, Color=c.color or T.text_dim, Opacity=1, Size=c.size or 12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=el.text, ZIndex=ez+1}
+                local el = { type="label", text=c.text or "" }
+                local ez = nz()
+                el._txt = Tx{Visible=false, Color=c.color or Theme.text_dim, Opacity=1, Size=c.size or 12, Center=false, Outline=true, OutlineColor=v3(0,0,0), Position=v2(0,0), Text=el.text, ZIndex=ez+1}
                 sec.elements[#sec.elements+1] = el
                 function el:Set(s) el.text = s; el._txt.Text = s end
                 return el
             end
 
-            -- Separator ────────────────────────────────────────────────
             function sec:Separator()
-                local el = {type="separator"}
-                local ez = newZ()
-                el._line = sq{Visible=false, Filled=true, Color=T.sep, Opacity=0.45, Position=v2(0,0), Size=v2(0,1), ZIndex=ez}
+                local el = { type="separator" }
+                local ez = nz()
+                el._line = Sq{Visible=false, Filled=true, Color=Theme.sep, Opacity=0.45, Position=v2(0,0), Size=v2(0,1), ZIndex=ez}
                 sec.elements[#sec.elements+1] = el
                 return el
             end
@@ -425,154 +407,91 @@ function Lib.new(cfg)
         return tab
     end
 
-    -- Notify / Toggle / Destroy ────────────────────────────────────────
-    function self:Notify(cfg2) pushNotif(cfg2) end
+    function self:Notify(cfg2) pushNotif(cfg2 or {}) end
     function self:Toggle() self.visible = not self.visible end
     function self:Destroy()
-        for _, o in ipairs(pool) do pcall(function() o:Remove() end) end
-        pool, _windows, _notifs = {}, {}, {}
+        for _, o in ipairs(_pool) do pcall(function() o:Remove() end) end
+        table.clear(_pool); table.clear(_windows); table.clear(_notifs)
     end
-    function self:SetTheme(overrides) for k,v in pairs(overrides) do T[k] = v end end
+    function self:SetTheme(overrides)
+        for k, v in pairs(overrides) do Theme[k] = v end
+    end
 
     return self
 end
 
--- ── Section height calculator ─────────────────────────────────────────
-local EH = {toggle=22, button=26, slider=36, dropdown=42, multidropdown=42, keybind=24, textinput=42, colorpicker=26, label=18, separator=10}
-local function secH(sec)
-    local h = 26
-    for _, el in ipairs(sec.elements) do
-        h = h + (EH[el.type] or 22)
-        if el.type == "colorpicker" and el.open then h = h + 90 end
-    end
-    return h + 8
-end
-
--- ── Input handling ────────────────────────────────────────────────────
-UIS.InputBegan:Connect(function(inp, gp)
-    if gp then return end
-    if inp.UserInputType == Enum.UserInputType.Keyboard then
-        if _listeningKB then
-            local kn = inp.KeyCode.Name
-            if inp.KeyCode == Enum.KeyCode.Escape then kn = "Unbound" end
-            _listeningKB.value = kn
-            _listeningKB._val.Text = kn
-            _listeningKB.listening = false
-            pcall(_listeningKB.cb, kn)
-            _listeningKB = nil
-            return
-        end
-        if _listeningTI then
-            local el = _listeningTI
-            local kc = inp.KeyCode
-            if kc == Enum.KeyCode.Return or kc == Enum.KeyCode.Escape then
-                el.focused = false
-                _listeningTI = nil
-                pcall(el.cb, el.value)
-            elseif kc == Enum.KeyCode.Backspace then
-                if #el.value > 0 then el.value = el.value:sub(1,-2) end
-            end
-        end
-    end
-    if inp.UserInputType == Enum.UserInputType.TextInput then
-        if _listeningTI then
-            _listeningTI.value = _listeningTI.value .. inp.Position.X
-        end
-    end
-end)
-
--- text input via GetString workaround via keycode
-UIS.InputBegan:Connect(function(inp, gp)
-    if gp or not _listeningTI then return end
-    if inp.UserInputType ~= Enum.UserInputType.Keyboard then return end
-    local kc  = inp.KeyCode
-    local ch  = kc.Name
-    if #ch == 1 then
-        local shift = UIS:IsKeyDown(Enum.KeyCode.LeftShift) or UIS:IsKeyDown(Enum.KeyCode.RightShift)
-        _listeningTI.value = _listeningTI.value .. (shift and ch:upper() or ch:lower())
-    end
-end)
-
--- ── Render loop ───────────────────────────────────────────────────────
-RS.RenderStepped:Connect(function()
+RunService.RenderStepped:Connect(function()
     updateMouse()
     local mx, my = mouse.x, mouse.y
 
-    local sw = workspace.CurrentCamera.ViewportSize.X
-    local sh = workspace.CurrentCamera.ViewportSize.Y
-
     for _, win in ipairs(_windows) do
         local x, y, W, H = win.x, win.y, win.width, win.height
-        local vis = win.visible
+        local vis  = win.visible
+        local full = vis and not win.minimised
 
-        -- Drag
-        if mouse.click and vis and hit(mx,my,x+2,y+2,W-60,28) then
-            win._drag = true; win._dox = mx-x; win._doy = my-y
-        end
-        if not mouse.down then win._drag = false end
-        if win._drag then
-            win.x = mx - win._dox
-            win.y = my - win._doy
-            x, y  = win.x, win.y
-        end
-
-        -- Close / Min buttons
         local cx_c = x + W - 18
         local cx_m = x + W - 36
         local bty  = y + 9
 
-        if mouse.click and vis and hit(mx,my,cx_c,bty,14,14) then vis = false; win.visible = false end
+        if mouse.click and vis and hit(mx,my,cx_c,bty,14,14) then
+            win.visible = false; vis = false
+        end
         if mouse.click and vis and hit(mx,my,cx_m,bty,14,14) then
-            win._minimised = not win._minimised
+            win.minimised = not win.minimised
+            full = vis and not win.minimised
         end
 
-        local fullVis = vis and not win._minimised
+        if mouse.click and vis and hit(mx,my,x,y,W-50,32) then
+            win._drag = true; win._dox = mx-x; win._doy = my-y
+        end
+        if not mouse.down then win._drag = false end
+        if win._drag then
+            win.x = mx - win._dox; win.y = my - win._doy
+            x, y  = win.x, win.y
+        end
 
-        win._shad.Position, win._shad.Size, win._shad.Visible  = v2(x-4,y-4), v2(W+8,(fullVis and H or 62)+8), vis
-        win._bg.Position,   win._bg.Size,   win._bg.Visible    = v2(x,y), v2(W, fullVis and H or 62), vis
-        win._brd.Position,  win._brd.Size,  win._brd.Visible   = v2(x,y), v2(W, fullVis and H or 62), vis
-        win._tbar_r.Position, win._tbar_r.Size, win._tbar_r.Visible = v2(x,y), v2(W,20), vis
-        win._tbar.Position,   win._tbar.Size,   win._tbar.Visible   = v2(x,y+4), v2(W,28), vis
-        win._tdot.Position, win._tdot.Visible   = v2(x+14,y+16), vis
-        win._ttxt.Position, win._ttxt.Visible   = v2(x+24,y+9), vis
-        win._tacc.Position, win._tacc.Size, win._tacc.Visible  = v2(x,y+32), v2(W,1), vis
-        win._tbbar.Position,win._tbbar.Size,win._tbbar.Visible = v2(x,y+33), v2(W,30), vis and fullVis
-        win._tbacc.Position,win._tbacc.Size,win._tbacc.Visible = v2(x,y+63), v2(W,1), vis and fullVis
+        local dispH = full and H or 32
 
-        win._close._bg.Position, win._close._bg.Visible  = v2(cx_c,bty), vis
-        win._close._txt.Position,win._close._txt.Visible = v2(cx_c+7,bty+6), vis
-        win._min._bg.Position,   win._min._bg.Visible    = v2(cx_m,bty), vis
-        win._min._txt.Position,  win._min._txt.Visible   = v2(cx_m+7,bty+6), vis
+        win._shad.Position,   win._shad.Size,   win._shad.Visible   = v2(x-4,y-4),   v2(W+8,dispH+8), vis
+        win._bg.Position,     win._bg.Size,      win._bg.Visible     = v2(x,y),        v2(W,dispH),     vis
+        win._brd.Position,    win._brd.Size,     win._brd.Visible    = v2(x,y),        v2(W,dispH),     vis
+        win._tbar_r.Position, win._tbar_r.Size,  win._tbar_r.Visible = v2(x,y),        v2(W,20),        vis
+        win._tbar.Position,   win._tbar.Size,    win._tbar.Visible   = v2(x,y+5),      v2(W,27),        vis
+        win._tdot.Position,   win._tdot.Visible  = v2(x+13,y+16),  vis
+        win._ttxt.Position,   win._ttxt.Visible  = v2(x+22,y+9),   vis
+        win._tacc.Position,   win._tacc.Size,    win._tacc.Visible   = v2(x,y+32),     v2(W,1),         full
+        win._tbbar.Position,  win._tbbar.Size,   win._tbbar.Visible  = v2(x,y+33),     v2(W,30),        full
+        win._tbacc.Position,  win._tbacc.Size,   win._tbacc.Visible  = v2(x,y+63),     v2(W,1),         full
+        win._cbtn._bg.Position,  win._cbtn._bg.Visible  = v2(cx_c,bty), vis
+        win._cbtn._txt.Position, win._cbtn._txt.Visible = v2(cx_c+7,bty+6), vis
+        win._mbtn._bg.Position,  win._mbtn._bg.Visible  = v2(cx_m,bty), vis
+        win._mbtn._txt.Position, win._mbtn._txt.Visible = v2(cx_m+7,bty+6), vis
 
-        -- Tabs
-        local tN  = math.max(#win.tabs, 1)
-        local tW2 = math.floor(W / tN)
+        local tN = math.max(#win.tabs, 1)
+        local tW = math.floor(W / tN)
+
         for i, tab in ipairs(win.tabs) do
-            local tx2 = x + (i-1)*tW2
-            local act = tab == win.activeTab
-            if mouse.click and fullVis and hit(mx,my,tx2,y+33,tW2,30) then
+            local tx2 = x + (i-1)*tW
+            if mouse.click and full and hit(mx,my,tx2,y+33,tW,30) then
                 win.activeTab = tab
-                if _activeDropdown then _activeDropdown.open = false; _activeDropdown = nil end
+                if _activeDD then _activeDD.open = false; _activeDD = nil end
             end
-            act = tab == win.activeTab
-            tab._bg.Position, tab._bg.Size, tab._bg.Color, tab._bg.Opacity, tab._bg.Visible = v2(tx2,y+33), v2(tW2,30), act and T.tab_act or T.tabbar, act and 0.6 or 0, fullVis
-            tab._txt.Position, tab._txt.Color, tab._txt.Visible = v2(tx2+tW2/2,y+41), act and T.tab_text_act or T.tab_text, fullVis
-            tab._line.Position, tab._line.Size, tab._line.Opacity, tab._line.Visible = v2(tx2+6,y+61), v2(tW2-12,2), act and 1 or 0, fullVis
+            local act = tab == win.activeTab
+            tab._bg.Position,   tab._bg.Size,   tab._bg.Color,   tab._bg.Opacity,   tab._bg.Visible  = v2(tx2,y+33), v2(tW,30), act and Theme.tab_act or Theme.tabbar, act and 0.7 or 0, full
+            tab._txt.Position,  tab._txt.Color, tab._txt.Visible = v2(tx2+tW/2,y+41), act and Theme.tab_text_act or Theme.tab_text, full
+            tab._line.Position, tab._line.Size, tab._line.Opacity, tab._line.Visible = v2(tx2+6,y+61), v2(tW-12,2), act and 1 or 0, full
 
-            local on = act and fullVis
-
-            -- Layout sections in two columns
-            local cX, cY = x+8, y+68
-            local cW2 = W-16
-            local hW   = math.floor(cW2/2) - 4
+            local on = act and full
+            local cX, cY, cW = x+8, y+68, W-16
+            local hW = math.floor(cW/2) - 4
             local lY, rY = cY, cY
 
             for _, sec in ipairs(tab.sections) do
-                local isL  = sec.side ~= "right"
-                local sX   = isL and cX or (cX + hW + 8)
-                local sY   = isL and lY or rY
-                local sW   = hW
-                local sH   = secH(sec)
+                local isL = sec.side ~= "right"
+                local sX  = isL and cX or (cX+hW+8)
+                local sY  = isL and lY or rY
+                local sW  = hW
+                local sH  = secH(sec)
 
                 sec._bg.Position,  sec._bg.Size,  sec._bg.Visible  = v2(sX,sY), v2(sW,sH), on
                 sec._brd.Position, sec._brd.Size, sec._brd.Visible = v2(sX,sY), v2(sW,sH), on
@@ -583,148 +502,139 @@ RS.RenderStepped:Connect(function()
 
                 for _, el in ipairs(sec.elements) do
                     if not on then
-                        -- hide everything
-                        local function hideAll(t2)
-                            for _, v in pairs(t2) do
-                                if type(v) == "table" then
-                                    if v.Visible ~= nil then v.Visible = false else hideAll(v) end
-                                elseif type(v) == "userdata" and v.Visible ~= nil then
-                                    v.Visible = false
+                        for _, d in pairs(el) do
+                            if type(d)=="userdata" and rawget(d,"Visible")~=nil then d.Visible=false end
+                        end
+                        if el.type=="dropdown" or el.type=="multidropdown" then
+                            for _, o in ipairs(el._opts or {}) do
+                                for _, d in pairs(o) do
+                                    if type(d)=="userdata" and rawget(d,"Visible")~=nil then d.Visible=false end
                                 end
                             end
                         end
-                        for _, v in pairs(el) do
-                            if type(v) == "userdata" and v.Visible ~= nil then v.Visible = false end
+                        if el.type=="colorpicker" then
+                            for _, sl in ipairs({el._sH,el._sS,el._sV}) do
+                                for _, d in pairs(sl) do
+                                    if type(d)=="userdata" and rawget(d,"Visible")~=nil then d.Visible=false end
+                                end
+                            end
                         end
                     else
-                        -- Toggle
+
                         if el.type == "toggle" then
-                            local bx, by = eX, eY+3
-                            el._box.Position, el._box.Size, el._box.Color, el._box.Visible = v2(bx,by), v2(32,16), el.value and T.tgl_on or T.tgl_off, true
-                            local kx = el.value and (bx+32-10) or (bx+4)
-                            el._knob.Position, el._knob.Visible = v2(kx,by+8), true
-                            el._txt.Position, el._txt.Visible = v2(bx+38,eY+1), true
-                            if mouse.click and hit(mx,my,bx,by,eW,16) then
-                                el.value = not el.value
-                                pcall(el.cb, el.value)
+                            el._box.Position,  el._box.Size,  el._box.Color,  el._box.Visible  = v2(eX,eY+3), v2(32,16), el.value and Theme.tgl_on or Theme.tgl_off, true
+                            el._knob.Position, el._knob.Visible = v2(el.value and eX+32-9 or eX+4, eY+11), true
+                            el._txt.Position,  el._txt.Visible  = v2(eX+38,eY+1), true
+                            if mouse.click and hit(mx,my,eX,eY+3,eW,16) then
+                                el.value = not el.value; pcall(el.cb, el.value)
                             end
                             eY = eY + 22
 
-                        -- Button
                         elseif el.type == "button" then
-                            local bhov = hit(mx,my,eX,eY,eW,22)
-                            el._bg.Position, el._bg.Size, el._bg.Color, el._bg.Visible = v2(eX,eY), v2(eW,22), bhov and T.btn_hover or T.btn_bg, true
+                            local hov = hit(mx,my,eX,eY,eW,22)
+                            el._bg.Position,  el._bg.Size,  el._bg.Color,  el._bg.Visible  = v2(eX,eY), v2(eW,22), hov and Theme.btn_hover or Theme.btn_bg, true
                             el._brd.Position, el._brd.Size, el._brd.Visible = v2(eX,eY), v2(eW,22), true
                             el._txt.Position, el._txt.Visible = v2(eX+eW/2,eY+4), true
-                            if mouse.click and bhov then pcall(el.cb) end
+                            if mouse.click and hov then pcall(el.cb) end
                             eY = eY + 26
 
-                        -- Slider
                         elseif el.type == "slider" then
                             el._txt.Position, el._txt.Visible = v2(eX,eY), true
                             local fmt = "%." .. el.dec .. "f"
                             el._val.Text = string.format(fmt, el.value)
                             el._val.Position, el._val.Visible = v2(eX+eW-40,eY), true
                             local slY = eY+16
-                            el._bg.Position, el._bg.Size, el._bg.Visible = v2(eX,slY), v2(eW,5), true
-                            local pct = (el.value - el.min) / math.max(el.max - el.min, 0.001)
-                            local fW  = math.max(5, eW * pct)
+                            el._bg.Position,   el._bg.Size,   el._bg.Visible   = v2(eX,slY), v2(eW,5), true
+                            local pct = (el.value-el.min)/math.max(el.max-el.min,0.001)
+                            local fW  = math.max(5, eW*pct)
                             el._fill.Position, el._fill.Size, el._fill.Visible = v2(eX,slY), v2(fW,5), true
-                            el._knob.Position, el._knob.Visible = v2(eX + fW, slY+2), true
-                            if mouse.click and hit(mx,my,eX,slY-3,eW,11) then el._sliding = true end
-                            if el._sliding then
+                            el._knob.Position, el._knob.Visible = v2(eX+fW,slY+2), true
+                            if mouse.click and hit(mx,my,eX,slY-4,eW,13) then el._sl = true end
+                            if el._sl then
                                 if mouse.down then
-                                    local p = clamp((mx-eX)/eW, 0, 1)
-                                    local raw = el.min + p*(el.max-el.min)
+                                    local p = clamp((mx-eX)/eW,0,1)
                                     local m = 10^el.dec
-                                    el.value = math.floor(raw*m+0.5)/m
+                                    el.value = math.floor((el.min+p*(el.max-el.min))*m+0.5)/m
                                     pcall(el.cb, el.value)
-                                else el._sliding = false end
+                                else el._sl = false end
                             end
                             eY = eY + 36
 
-                        -- Dropdown
                         elseif el.type == "dropdown" then
                             el._lbl.Position, el._lbl.Visible = v2(eX,eY), true
                             local ddY = eY+14
-                            el._bg.Position, el._bg.Size, el._bg.Visible  = v2(eX,ddY), v2(eW,22), true
-                            el._brd.Position,el._brd.Size,el._brd.Visible = v2(eX,ddY), v2(eW,22), true
+                            el._bg.Position,  el._bg.Size,  el._bg.Visible  = v2(eX,ddY), v2(eW,22), true
+                            el._brd.Position, el._brd.Size, el._brd.Visible = v2(eX,ddY), v2(eW,22), true
                             el._val.Position, el._val.Text, el._val.Visible = v2(eX+6,ddY+4), el.value, true
                             el._arr.Position, el._arr.Text, el._arr.Visible = v2(eX+eW-16,ddY+4), el.open and "▴" or "▾", true
                             if mouse.click and hit(mx,my,eX,ddY,eW,22) then
-                                if _activeDropdown and _activeDropdown ~= el then _activeDropdown.open = false end
+                                if _activeDD and _activeDD~=el then _activeDD.open=false end
                                 el.open = not el.open
-                                _activeDropdown = el.open and el or nil
+                                _activeDD = el.open and el or nil
                             end
                             for oi, o in ipairs(el._opts) do
-                                local oY = ddY+22+(oi-1)*22
-                                local sv = el.open
-                                local ohov = sv and hit(mx,my,eX,oY,eW,22)
-                                o._bg.Position, o._bg.Size, o._bg.Color, o._bg.Visible  = v2(eX,oY), v2(eW,22), ohov and T.dd_hover or (el.options[oi]==el.value and Color3.fromRGB(30,50,50) or T.dd_item), sv
-                                o._txt.Position, o._txt.Color, o._txt.Visible = v2(eX+6,oY+4), el.options[oi]==el.value and T.accent or T.text, sv
-                                if mouse.click and ohov then
-                                    el.value = el.options[oi]
-                                    el.open  = false
-                                    _activeDropdown = nil
-                                    pcall(el.cb, el.value)
+                                local oY  = ddY+22+(oi-1)*22
+                                local sv  = el.open
+                                local hov2 = sv and hit(mx,my,eX,oY,eW,22)
+                                local isSel = el.options[oi] == el.value
+                                o._bg.Position,  o._bg.Size,  o._bg.Color,  o._bg.Visible  = v2(eX,oY), v2(eW,22), hov2 and Theme.dd_hover or (isSel and Theme.dd_sel or Theme.dd_item), sv
+                                o._txt.Position, o._txt.Color, o._txt.Visible = v2(eX+6,oY+4), isSel and Theme.accent or Theme.text, sv
+                                if mouse.click and hov2 then
+                                    el.value = el.options[oi]; el.open = false
+                                    _activeDD = nil; pcall(el.cb, el.value)
                                 end
                             end
                             eY = eY + 42
 
-                        -- MultiDropdown
                         elseif el.type == "multidropdown" then
                             el._lbl.Position, el._lbl.Visible = v2(eX,eY), true
                             local ddY = eY+14
-                            el._bg.Position, el._bg.Size, el._bg.Visible  = v2(eX,ddY), v2(eW,22), true
-                            el._brd.Position,el._brd.Size,el._brd.Visible = v2(eX,ddY), v2(eW,22), true
+                            el._bg.Position,  el._bg.Size,  el._bg.Visible  = v2(eX,ddY), v2(eW,22), true
+                            el._brd.Position, el._brd.Size, el._brd.Visible = v2(eX,ddY), v2(eW,22), true
                             el._val.Position, el._val.Text, el._val.Visible = v2(eX+6,ddY+4), el._getText(), true
                             el._arr.Position, el._arr.Text, el._arr.Visible = v2(eX+eW-16,ddY+4), el.open and "▴" or "▾", true
                             if mouse.click and hit(mx,my,eX,ddY,eW,22) then
-                                if _activeDropdown and _activeDropdown ~= el then _activeDropdown.open = false end
+                                if _activeDD and _activeDD~=el then _activeDD.open=false end
                                 el.open = not el.open
-                                _activeDropdown = el.open and el or nil
+                                _activeDD = el.open and el or nil
                             end
                             for oi, o in ipairs(el._opts) do
                                 local oY   = ddY+22+(oi-1)*22
                                 local sv   = el.open
                                 local opt  = el.options[oi]
-                                local on2  = el.selected[opt]
-                                local ohov = sv and hit(mx,my,eX,oY,eW,22)
-                                o._bg.Position, o._bg.Size, o._bg.Color, o._bg.Visible = v2(eX,oY), v2(eW,22), ohov and tint(T.dd_item,0.06) or T.dd_item, sv
-                                o._chk.Position, o._chk.Color, o._chk.Visible = v2(eX+6,oY+6), on2 and T.tgl_on or T.tgl_off, sv
-                                o._txt.Position, o._txt.Color, o._txt.Visible = v2(eX+22,oY+4), on2 and T.accent or T.text, sv
-                                if mouse.click and ohov then
+                                local sel2 = el.selected[opt]
+                                local hov2 = sv and hit(mx,my,eX,oY,eW,22)
+                                o._bg.Position,  o._bg.Size,  o._bg.Color,  o._bg.Visible = v2(eX,oY), v2(eW,22), hov2 and Theme.dd_hover or Theme.dd_item, sv
+                                o._chk.Position, o._chk.Color, o._chk.Visible = v2(eX+6,oY+6), sel2 and Theme.tgl_on or Theme.tgl_off, sv
+                                o._txt.Position, o._txt.Color, o._txt.Visible = v2(eX+22,oY+4), sel2 and Theme.accent or Theme.text, sv
+                                if mouse.click and hov2 then
                                     el.selected[opt] = not el.selected[opt]
                                     pcall(el.cb, el:Get())
                                 end
                             end
                             eY = eY + 42
 
-                        -- Keybind
                         elseif el.type == "keybind" then
                             el._txt.Position, el._txt.Visible = v2(eX,eY+2), true
-                            local kW2 = 62
-                            el._bg.Position, el._bg.Size, el._bg.Visible  = v2(eX+eW-kW2,eY), v2(kW2,18), true
-                            el._brd.Position,el._brd.Size,el._brd.Visible = v2(eX+eW-kW2,eY), v2(kW2,18), true
-                            el._val.Position, el._val.Text, el._val.Color, el._val.Visible = v2(eX+eW-kW2/2,eY+2), el.listening and "..." or el.value, el.listening and T.accent or T.text_dim, true
-                            if mouse.click and hit(mx,my,eX+eW-kW2,eY,kW2,18) then
+                            local kW = 62
+                            el._bg.Position,  el._bg.Size,  el._bg.Visible  = v2(eX+eW-kW,eY), v2(kW,18), true
+                            el._brd.Position, el._brd.Size, el._brd.Visible = v2(eX+eW-kW,eY), v2(kW,18), true
+                            el._val.Position, el._val.Text, el._val.Color, el._val.Visible = v2(eX+eW-kW/2,eY+2), el.listening and "..." or el.value, el.listening and Theme.accent or Theme.text_dim, true
+                            if mouse.click and hit(mx,my,eX+eW-kW,eY,kW,18) then
                                 el.listening = true; _listeningKB = el
                             end
                             eY = eY + 24
 
-                        -- TextInput
                         elseif el.type == "textinput" then
                             el._lbl.Position, el._lbl.Visible = v2(eX,eY), true
                             local tiY = eY+14
-                            el._bg.Position, el._bg.Size, el._bg.Visible  = v2(eX,tiY), v2(eW,22), true
-                            el._brd.Position,el._brd.Size,el._brd.Visible = v2(eX,tiY), v2(eW,22), true
-                            local disp = #el.value > 0 and el.value or el.placeholder
-                            local tcol = #el.value > 0 and T.text or T.text_dim
-                            el._txt.Position, el._txt.Text, el._txt.Color, el._txt.Visible = v2(eX+6,tiY+4), disp, tcol, true
+                            el._bg.Position,  el._bg.Size,  el._bg.Visible  = v2(eX,tiY), v2(eW,22), true
+                            el._brd.Position, el._brd.Size, el._brd.Color, el._brd.Opacity, el._brd.Visible = v2(eX,tiY), v2(eW,22), el.focused and Theme.accent or Theme.section_brd, el.focused and 0.7 or 0.4, true
+                            local disp = #el.value>0 and el.value or el.placeholder
+                            el._txt.Position, el._txt.Text, el._txt.Color, el._txt.Visible = v2(eX+6,tiY+4), disp, #el.value>0 and Theme.text or Theme.text_dim, true
                             el._blink = (el._blink or 0) + 1
-                            local curVis = el.focused and (el._blink % 60 < 30)
-                            local cx2 = eX + 6 + #el.value * 7
-                            el._cur.Position, el._cur.Visible = v2(cx2,tiY+4), curVis
+                            local cx2 = eX+6+#el.value*7
+                            el._cur.Position, el._cur.Visible = v2(cx2,tiY+4), el.focused and (el._blink%60<30)
                             if mouse.click and hit(mx,my,eX,tiY,eW,22) then
                                 el.focused = true; _listeningTI = el
                             elseif mouse.click then
@@ -732,64 +642,49 @@ RS.RenderStepped:Connect(function()
                                 el.focused = false
                                 if _listeningTI == el then _listeningTI = nil end
                             end
-                            if el.focused then
-                                el._brd.Color = T.accent
-                                el._brd.Opacity = 0.7
-                            else
-                                el._brd.Color = T.section_brd
-                                el._brd.Opacity = 0.4
-                            end
                             eY = eY + 42
 
-                        -- ColorPicker
                         elseif el.type == "colorpicker" then
                             el._lbl.Position, el._lbl.Visible = v2(eX,eY+1), true
-                            el._prev.Position, el._prev.Color, el._prev.Visible = v2(eX+eW-40,eY), el.color, true
-                            el._prevbrd.Position, el._prevbrd.Visible = v2(eX+eW-40,eY), true
-                            if mouse.click and hit(mx,my,eX+eW-40,eY,40,16) then el.open = not el.open end
+                            el._prev.Position,    el._prev.Color,    el._prev.Visible    = v2(eX+eW-38,eY), el.color, true
+                            el._prevbrd.Position, el._prevbrd.Visible = v2(eX+eW-38,eY), true
+                            if mouse.click and hit(mx,my,eX+eW-38,eY,38,16) then el.open = not el.open end
                             eY = eY + 26
                             if el.open then
-                                local function renderCPSlider(sl, lbl, val, px, py, pw, isSliding)
+                                local function renderCS(sl, lbl, val, px, py, pw)
                                     sl._lbl.Position, sl._lbl.Text, sl._lbl.Visible = v2(px,py), lbl, true
                                     local sy2 = py+12
                                     sl._bg.Position,   sl._bg.Size,   sl._bg.Visible   = v2(px,sy2), v2(pw,5), true
-                                    local fill2 = math.max(4, pw*val)
-                                    sl._fill.Position, sl._fill.Size, sl._fill.Visible = v2(px,sy2), v2(fill2,5), true
-                                    sl._knob.Position, sl._knob.Visible = v2(px+fill2, sy2+2), true
-                                    if mouse.click and hit(mx,my,px,sy2-4,pw,13) then isSliding[1] = true end
-                                    if isSliding[1] then
-                                        if mouse.down then
-                                            val = clamp((mx-px)/pw, 0, 1)
-                                        else isSliding[1] = false end
+                                    local fw2 = math.max(4, pw*val)
+                                    sl._fill.Position, sl._fill.Size, sl._fill.Visible = v2(px,sy2), v2(fw2,5), true
+                                    sl._knob.Position, sl._knob.Visible = v2(px+fw2,sy2+2), true
+                                    if mouse.click and hit(mx,my,px,sy2-4,pw,13) then sl._sl = true end
+                                    if sl._sl then
+                                        if mouse.down then val = clamp((mx-px)/pw,0,1)
+                                        else sl._sl = false end
                                     end
-                                    return val, isSliding
+                                    return val
                                 end
-                                if not el._slidH then el._slidH={false} end
-                                if not el._slidS then el._slidS={false} end
-                                if not el._slidV then el._slidV={false} end
-                                local nh, ns, nv = el.h, el.s, el.v
-                                nh, el._slidH = renderCPSlider(el._sH, "H", el.h, eX, eY, eW, el._slidH)
-                                ns, el._slidS = renderCPSlider(el._sS, "S", el.s, eX, eY+22, eW, el._slidS)
-                                nv, el._slidV = renderCPSlider(el._sV, "V", el.v, eX, eY+44, eW, el._slidV)
-                                if nh ~= el.h or ns ~= el.s or nv ~= el.v then
-                                    el.h, el.s, el.v = nh, ns, nv
-                                    el.color = Color3.fromHSV(el.h, el.s, el.v)
+                                local nh = renderCS(el._sH,"H",el.h,eX,eY,eW)
+                                local ns = renderCS(el._sS,"S",el.s,eX,eY+22,eW)
+                                local nv = renderCS(el._sV,"V",el.v,eX,eY+44,eW)
+                                if nh~=el.h or ns~=el.s or nv~=el.v then
+                                    el.h,el.s,el.v = nh,ns,nv
+                                    el.color = Color3.fromHSV(el.h,el.s,el.v)
                                     el._prev.Color = el.color
                                     pcall(el.cb, el.color)
                                 end
-                                eY = eY + 70
+                                eY = eY + 72
                             else
-                                for _, sl in ipairs({el._sH, el._sS, el._sV}) do
-                                    sl._bg.Visible, sl._fill.Visible, sl._knob.Visible, sl._lbl.Visible = false,false,false,false
+                                for _, sl in ipairs({el._sH,el._sS,el._sV}) do
+                                    sl._bg.Visible,sl._fill.Visible,sl._knob.Visible,sl._lbl.Visible=false,false,false,false
                                 end
                             end
 
-                        -- Label
                         elseif el.type == "label" then
                             el._txt.Position, el._txt.Visible = v2(eX,eY), true
                             eY = eY + 18
 
-                        -- Separator
                         elseif el.type == "separator" then
                             el._line.Position, el._line.Size, el._line.Visible = v2(eX,eY+4), v2(eW,1), true
                             eY = eY + 10
@@ -802,7 +697,7 @@ RS.RenderStepped:Connect(function()
         end
     end
 
-    renderNotifs(sw, sh)
+    renderNotifs()
 end)
 
-return Lib
+return SerotininLib
